@@ -60,28 +60,39 @@ async def ask(req: AskRequest):
 
     async def event_stream() -> AsyncIterator[bytes]:
         try:
-            # Use Groq's synchronous messages.stream API
-            stream = client.messages.stream(
+            # Use Groq's chat.completions API with streaming
+            # System prompt is passed as the first message with role="system"
+            messages = [
+                {"role": "system", "content": KENYA_TAX_SYSTEM_PROMPT},
+                {"role": "user", "content": req.question},
+            ]
+            
+            stream = client.chat.completions.create(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
-                system=KENYA_TAX_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": req.question}],
+                messages=messages,
+                stream=True,
             )
             
-            with stream as s:
-                for text in s.text_stream:
-                    if text:
-                        yield _sse("token", {"text": text})
+            total_input_tokens = 0
+            total_output_tokens = 0
             
-            # Get final message for usage stats
-            final_message = stream.get_final_message()
-            usage = final_message.usage if hasattr(final_message, "usage") else None
+            for chunk in stream:
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if delta and delta.content:
+                        yield _sse("token", {"text": delta.content})
+                
+                # Track token usage if available
+                if hasattr(chunk, "usage") and chunk.usage:
+                    total_input_tokens = chunk.usage.prompt_tokens or 0
+                    total_output_tokens = chunk.usage.completion_tokens or 0
             
             yield _sse(
                 "done",
                 {
-                    "input_tokens": usage.input_tokens if usage else 0,
-                    "output_tokens": usage.output_tokens if usage else 0,
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
                     "cache_read": 0,
                     "cache_write": 0,
                 },
