@@ -4,7 +4,7 @@ A free, instant Q&A assistant for Kenyan tax law — PAYE, VAT, TOT, WHT,
 NSSF, SHIF, Housing Levy, TCC, iTax deadlines — powered by Claude
 (`claude-opus-4-7`).
 
-Live demo: **[add Railway URL here after deploy]**
+Live demo: **https://cheerful-reflection-production.up.railway.app/**
 
 ## Why this exists
 
