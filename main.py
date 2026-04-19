@@ -67,20 +67,27 @@ async def ask(req: AskRequest):
                 messages=[{"role": "user", "content": req.question}],
             ) as stream:
                 async for text in stream.text_stream:
-                    yield _sse("token", {"text": text})
+                    if text:
+                        yield _sse("token", {"text": text})
 
                 final = await stream.get_final_message()
+                usage = final.usage if hasattr(final, "usage") else None
+                input_tokens = usage.input_tokens if usage else 0
+                output_tokens = usage.output_tokens if usage else 0
+                
                 yield _sse(
                     "done",
                     {
-                        "input_tokens": final.usage.input_tokens,
-                        "output_tokens": final.usage.output_tokens,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
                         "cache_read": 0,
                         "cache_write": 0,
                     },
                 )
         except Exception as e:  # noqa: BLE001
-            yield _sse("error", {"message": str(e)[:300]})
+            import traceback
+            error_msg = f"{str(e)[:200]}\n{traceback.format_exc()[:100]}"
+            yield _sse("error", {"message": error_msg})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
