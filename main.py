@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from system_prompt import KENYA_TAX_SYSTEM_PROMPT
 
-MODEL = "llama-3.1-70b-versatile"
+MODEL = "llama-3.3-70b-versatile"
 MAX_TOKENS = 2048
 STATIC_DIR = Path(__file__).parent / "static"
 
