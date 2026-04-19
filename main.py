@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 from typing import AsyncIterator
 
-from groq import Groq
+from openai import OpenAI
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,7 +36,10 @@ app = FastAPI(
     version="1.0.0",
 )
 
-client = Groq()  # reads GROQ_API_KEY from env
+client = OpenAI(
+    api_key=os.getenv("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1",
+)
 
 
 class AskRequest(BaseModel):
@@ -65,46 +68,25 @@ async def ask(req: AskRequest):
                 {"role": "system", "content": KENYA_TAX_SYSTEM_PROMPT},
                 {"role": "user", "content": req.question},
             ]
-            
-            # Try different ways to call Groq API
-            try:
-                # Try OpenAI-compatible syntax
-                stream = client.chat.completions.create(
-                    model=MODEL,
-                    max_tokens=MAX_TOKENS,
-                    messages=messages,
-                    stream=True,
-                )
-            except AttributeError:
-                # Fallback if chat.completions doesn't exist
-                stream = client.completions.create(
-                    model=MODEL,
-                    max_tokens=MAX_TOKENS,
-                    prompt=f"System: {KENYA_TAX_SYSTEM_PROMPT}\n\nUser: {req.question}",
-                    stream=True,
-                )
-            
+
+            stream = client.chat.completions.create(
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
+                messages=messages,
+                stream=True,
+            )
+
             total_input_tokens = 0
             total_output_tokens = 0
-            
+
             for chunk in stream:
-                # Handle both OpenAI-style and other response formats
-                if hasattr(chunk, "choices") and chunk.choices:
-                    if hasattr(chunk.choices[0], "delta") and hasattr(chunk.choices[0].delta, "content"):
-                        content = chunk.choices[0].delta.content
-                        if content:
-                            yield _sse("token", {"text": content})
-                    elif hasattr(chunk.choices[0], "text"):
-                        # Handle text_completion style responses
-                        if chunk.choices[0].text:
-                            yield _sse("token", {"text": chunk.choices[0].text})
+                if chunk.choices and chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    yield _sse("token", {"text": content})
                 
-                # Track token usage
-                if hasattr(chunk, "usage") and chunk.usage:
-                    if hasattr(chunk.usage, "prompt_tokens"):
-                        total_input_tokens = chunk.usage.prompt_tokens or 0
-                    if hasattr(chunk.usage, "completion_tokens"):
-                        total_output_tokens = chunk.usage.completion_tokens or 0
+                if chunk.usage:
+                    total_input_tokens = chunk.usage.prompt_tokens or 0
+                    total_output_tokens = chunk.usage.completion_tokens or 0
             
             yield _sse(
                 "done",
