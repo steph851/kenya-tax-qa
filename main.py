@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 from typing import AsyncIterator
 
-from groq import AsyncGroq
+from groq import Groq
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,7 +36,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
-client = AsyncGroq()  # reads GROQ_API_KEY from env
+client = Groq()  # reads GROQ_API_KEY from env
 
 
 class AskRequest(BaseModel):
@@ -60,34 +60,34 @@ async def ask(req: AskRequest):
 
     async def event_stream() -> AsyncIterator[bytes]:
         try:
-            async with client.messages.stream(
+            # Use Groq's synchronous messages.stream API
+            stream = client.messages.stream(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
                 system=KENYA_TAX_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": req.question}],
-            ) as stream:
-                async for text in stream.text_stream:
+            )
+            
+            with stream as s:
+                for text in s.text_stream:
                     if text:
                         yield _sse("token", {"text": text})
-
-                final = await stream.get_final_message()
-                usage = final.usage if hasattr(final, "usage") else None
-                input_tokens = usage.input_tokens if usage else 0
-                output_tokens = usage.output_tokens if usage else 0
-                
-                yield _sse(
-                    "done",
-                    {
-                        "input_tokens": input_tokens,
-                        "output_tokens": output_tokens,
-                        "cache_read": 0,
-                        "cache_write": 0,
-                    },
-                )
+            
+            # Get final message for usage stats
+            final_message = stream.get_final_message()
+            usage = final_message.usage if hasattr(final_message, "usage") else None
+            
+            yield _sse(
+                "done",
+                {
+                    "input_tokens": usage.input_tokens if usage else 0,
+                    "output_tokens": usage.output_tokens if usage else 0,
+                    "cache_read": 0,
+                    "cache_write": 0,
+                },
+            )
         except Exception as e:  # noqa: BLE001
-            import traceback
-            error_msg = f"{str(e)[:200]}\n{traceback.format_exc()[:100]}"
-            yield _sse("error", {"message": error_msg})
+            yield _sse("error", {"message": f"Error: {str(e)[:250]}"})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
